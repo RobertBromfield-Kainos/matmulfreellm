@@ -1,0 +1,4 @@
+torch>=2.0
+einops>=0.4.1
+transformers
+setuptools==40.8.0

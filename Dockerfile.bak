@@ -1,0 +1,111 @@
+# syntax=docker/dockerfile:experimental
+FROM localstack/localstack:latest
+
+# === Certificate Handling for ZScaler ===
+# Create a directory for the certificates
+RUN mkdir -p /tmp/kainosCerts
+
+# Copy the certificates to the container
+COPY "certs/*.crt" /tmp/kainosCerts
+
+# Install ca-certificates and update the certificate store
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    cp /tmp/kainosCerts/*.crt /usr/local/share/ca-certificates && \
+    update-ca-certificates
+
+# Fix for pip SSL error
+RUN echo "[global]" >> /etc/pip.conf && \
+    echo "cert = /usr/local/share/ca-certificates/kainos-chain.crt" >> /etc/pip.conf
+
+# === End of Certificate Handling Region ===
+
+# === Start of Original Dockerfile Content ===
+# Use Debian as a base image
+FROM debian:latest
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Install system dependencies and Python3 venv
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    build-essential \
+    cmake \
+    ninja-build \
+    llvm \
+    clang \
+    ca-certificates \
+    curl \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    libssl-dev
+
+# Set environment variables for the compilers
+ENV CC=clang
+ENV CXX=clang++
+
+# Update certificates
+RUN update-ca-certificates
+
+# Copy the current directory contents into the container at /app
+COPY . /app
+
+RUN rm -rf /app/venv
+RUN python3 -m venv /app/venv
+RUN /app/venv/bin/pip install --upgrade pip
+ENV PATH="/app/venv/bin:$PATH"
+
+# Verify Python and venv installation
+RUN python3 --version
+RUN python3 -m venv --help
+
+RUN rm /app/venv/bin/python3
+RUN ln -s /usr/bin/python3 /app/venv/bin/python3
+
+# Create a virtual environment and install dependencies
+RUN python3 -m venv /app/venv && \
+    /app/venv/bin/pip install --upgrade pip
+
+# Install Python dependencies inside the virtual environment
+RUN /app/venv/bin/pip install torch>=2.0 einops>=0.4.1 transformers --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+
+# Clone Triton repository and install manually
+RUN git clone https://github.com/openai/triton.git /app/triton
+
+# Set environment variables for Triton
+ENV TRITON_PATH=/app/triton
+ENV PATH="${TRITON_PATH}/python:${PATH}"
+
+WORKDIR /app/triton/python
+
+# Add the custom certificate to the system certificates
+#RUN cat /usr/local/share/ca-certificates/kainos-chain.crt >> /etc/ssl/certs/ca-certificates.crt
+
+# Install Triton with SSL verification disabled
+#RUN /app/venv/bin/pip install . --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --cert /usr/local/share/ca-certificates/kainos-chain.crt
+
+# Test Triton installation
+RUN /app/venv/bin/python -c "import triton; print('Triton installed successfully')"
+
+# Reset the working directory to /app
+WORKDIR /app
+
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
+
+# Make port 80 available to the world outside this container
+EXPOSE 80
+
+# Define environment variable
+ENV NAME MatMulFreeLLM
+ENV PATH="/app/venv/bin:$PATH"
+
+# Run the entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]

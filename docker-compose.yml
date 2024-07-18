@@ -1,0 +1,12 @@
+version: '2.0'
+services:
+  localstack:
+    image: jmatchett/abc
+    container_name: abc
+    ports:
+      - '4572'
+    environment:
+      - SERVICES=s3:4572
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DEFAULT_REGION=eu-west-2

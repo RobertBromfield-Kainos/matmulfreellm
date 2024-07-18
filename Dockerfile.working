@@ -1,0 +1,32 @@
+# Use the official Python base image
+FROM python:3.9-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Install necessary dependencies and update CA certificates
+RUN apt-get update && \
+    apt-get install -y git curl ca-certificates && \
+    apt-get clean && \
+    update-ca-certificates
+
+# Clone the triton repository
+RUN git clone https://github.com/openai/triton.git
+
+# Change working directory to triton
+WORKDIR /app/triton
+
+# Create setup.py file
+RUN echo "from setuptools import setup, find_packages\n\nsetup(\n    name='triton',\n    version='0.1.0',\n    package_dir={'': 'src'},\n    packages=find_packages(where='src'),\n    include_package_data=True,\n    install_requires=[],\n    entry_points={\n        'console_scripts': [],\n    },\n)\n" > setup.py
+
+# Create src directory and move the relevant package directories into it
+RUN mkdir src && \
+    mv lib cmake include unittest third_party src/ && \
+    mkdir -p src/triton && \
+    touch src/triton/__init__.py
+
+# Install the package with trusted hosts
+RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org .
+
+# Define the default command
+CMD ["python3"]
